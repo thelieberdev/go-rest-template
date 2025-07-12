@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/lieberdev/go-rest-template/internal/data"
+	"github.com/lieberdev/go-rest-template/internal/database"
 	"github.com/lieberdev/go-rest-template/internal/validator"
 )
 
@@ -56,7 +56,7 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 
 		authorizationHeader := r.Header.Get("Authorization")
 		if authorizationHeader == "" {
-			r = app.contextSetUser(r, data.AnonymousUser)
+			r = app.contextSetUser(r, database.AnonymousUser)
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -70,15 +70,15 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		token := headerParts[1]
 
 		v := validator.New()
-		if data.ValidatePasswordPlaintext(v, token); !v.Valid() {
+		if database.ValidatePasswordPlaintext(v, token); !v.Valid() {
 			app.invalidAuthenticationTokenResponse(w, r)
 			return
 		}
 
-		user, err := app.models.Users.GetForToken(data.ScopeAuthentication, token)
+		user, err := app.models.Users.GetForToken(database.ScopeAuthentication, token)
 		if err != nil {
 			switch {
-			case errors.Is(err, data.ErrRecordNotFound):
+			case errors.Is(err, database.ErrRecordNotFound):
 				app.invalidAuthenticationTokenResponse(w, r)
 			default:
 				app.serverErrorResponse(w, r, err)

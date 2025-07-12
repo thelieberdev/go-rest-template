@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lieberdev/go-rest-template/internal/data"
+	"github.com/lieberdev/go-rest-template/internal/database"
 	"github.com/lieberdev/go-rest-template/internal/validator"
 )
 
@@ -22,8 +22,8 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 	}
 
 	v := validator.New()
-	data.ValidateEmail(v, input.Email)
-	data.ValidatePasswordPlaintext(v, input.Password)
+	database.ValidateEmail(v, input.Email)
+	database.ValidatePasswordPlaintext(v, input.Password)
 	if !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
@@ -32,7 +32,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 	user, err := app.models.Users.GetByEmail(input.Email)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
+		case errors.Is(err, database.ErrRecordNotFound):
 			app.invalidCredentialsResponse(w, r)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -51,7 +51,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, data.ScopeAuthentication)
+	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, database.ScopeAuthentication)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -75,7 +75,7 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 	}
 
 	v := validator.New()
-	if data.ValidateEmail(v, input.Email); !v.Valid() {
+	if database.ValidateEmail(v, input.Email); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -83,7 +83,7 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 	user, err := app.models.Users.GetByEmail(input.Email)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
+		case errors.Is(err, database.ErrRecordNotFound):
 			v.AddError("email", "no matching email address found")
 			app.failedValidationResponse(w, r, v.Errors)
 		default:
@@ -98,7 +98,7 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 45*time.Minute, data.ScopePasswordReset)
+	token, err := app.models.Tokens.New(user.ID, 45*time.Minute, database.ScopePasswordReset)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -134,7 +134,7 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 	}
 
 	v := validator.New()
-	if data.ValidateEmail(v, input.Email); !v.Valid() {
+	if database.ValidateEmail(v, input.Email); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -142,7 +142,7 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 	user, err := app.models.Users.GetByEmail(input.Email)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
+		case errors.Is(err, database.ErrRecordNotFound):
 			v.AddError("email", "no matching email address found")
 			app.failedValidationResponse(w, r, v.Errors)
 		default:
@@ -157,7 +157,7 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopeActivation)
+	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, database.ScopeActivation)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

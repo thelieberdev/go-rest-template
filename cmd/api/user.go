@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lieberdev/go-rest-template/internal/data"
+	"github.com/lieberdev/go-rest-template/internal/database"
 	"github.com/lieberdev/go-rest-template/internal/validator"
 )
 
@@ -21,7 +21,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	user := &data.User{
+	user := &database.User{
 		Email:     input.Email,
 		Activated: false,
 	}
@@ -33,7 +33,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	v := validator.New()
-	if data.ValidateUser(v, user); !v.Valid() {
+	if database.ValidateUser(v, user); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -41,7 +41,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	err = app.models.Users.Insert(user)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrDuplicateEmail):
+		case errors.Is(err, database.ErrDuplicateEmail):
 			v.AddError("email", "a user with this email address already exists")
 			app.failedValidationResponse(w, r, v.Errors)
 		default:
@@ -50,7 +50,7 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopeActivation)
+	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, database.ScopeActivation)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -86,15 +86,15 @@ func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	v := validator.New()
-	if data.ValidateTokenPlaintext(v, input.TokenPlaintext); !v.Valid() {
+	if database.ValidateTokenPlaintext(v, input.TokenPlaintext); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	user, err := app.models.Users.GetForToken(data.ScopeActivation, input.TokenPlaintext)
+	user, err := app.models.Users.GetForToken(database.ScopeActivation, input.TokenPlaintext)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
+		case errors.Is(err, database.ErrRecordNotFound):
 			v.AddError("token", "invalid or expired activation token")
 			app.failedValidationResponse(w, r, v.Errors)
 		default:
@@ -108,7 +108,7 @@ func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Reque
 	err = app.models.Users.Update(user)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrEditConflict):
+		case errors.Is(err, database.ErrEditConflict):
 			app.editConflictResponse(w, r)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -116,7 +116,7 @@ func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.models.Tokens.DeleteAllForUser(data.ScopeActivation, user.ID)
+	err = app.models.Tokens.DeleteAllForUser(database.ScopeActivation, user.ID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -141,17 +141,17 @@ func (app *application) updateUserPasswordHandler(w http.ResponseWriter, r *http
 	}
 
 	v := validator.New()
-	data.ValidatePasswordPlaintext(v, input.Password)
-	data.ValidateTokenPlaintext(v, input.TokenPlaintext)
+	database.ValidatePasswordPlaintext(v, input.Password)
+	database.ValidateTokenPlaintext(v, input.TokenPlaintext)
 	if !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	user, err := app.models.Users.GetForToken(data.ScopePasswordReset, input.TokenPlaintext)
+	user, err := app.models.Users.GetForToken(database.ScopePasswordReset, input.TokenPlaintext)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
+		case errors.Is(err, database.ErrRecordNotFound):
 			v.AddError("token", "invalid or expired password reset token")
 			app.failedValidationResponse(w, r, v.Errors)
 		default:
@@ -169,7 +169,7 @@ func (app *application) updateUserPasswordHandler(w http.ResponseWriter, r *http
 	err = app.models.Users.Update(user)
 	if err != nil {
 		switch {
-		case errors.Is(err, data.ErrEditConflict):
+		case errors.Is(err, database.ErrEditConflict):
 			app.editConflictResponse(w, r)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -177,7 +177,7 @@ func (app *application) updateUserPasswordHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = app.models.Tokens.DeleteAllForUser(data.ScopePasswordReset, user.ID)
+	err = app.models.Tokens.DeleteAllForUser(database.ScopePasswordReset, user.ID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

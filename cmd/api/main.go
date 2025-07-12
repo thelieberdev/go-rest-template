@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lieberdev/go-rest-template/internal/data"
-	"github.com/lieberdev/go-rest-template/internal/db"
+	"github.com/lieberdev/go-rest-template/internal/database"
 	"github.com/lieberdev/go-rest-template/internal/mailer"
 )
 
@@ -22,14 +21,14 @@ type config struct {
 		allowedOrigins []string
 	}
 	smtp mailer.Config
-	db db.Config
+	db database.Config
 }
 
 type application struct {
 	config     config
 	logger     *slog.Logger
-	models     data.Models
-	mailer     mailer.Mailer
+	models     database.Models
+	mailer     *mailer.Mailer
 	waitgroup  sync.WaitGroup
 }
 
@@ -68,7 +67,7 @@ func main() {
 	)
 	flag.Parse()
 
-	db, err := db.Init(&cfg.db)
+	db, err := database.Init(&cfg.db)
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(1)
@@ -99,7 +98,7 @@ func main() {
 	app := &application{
 		config: cfg,
 		logger: logger,
-		models: data.NewModels(db),
+		models: database.NewModels(db),
 		mailer: mailer,
 	}
 
