@@ -12,6 +12,7 @@ import (
 
 	"github.com/lieberdev/go-rest-template/internal/data"
 	"github.com/lieberdev/go-rest-template/internal/db"
+	"github.com/lieberdev/go-rest-template/internal/mailer"
 )
 
 type config struct {
@@ -20,13 +21,7 @@ type config struct {
 	cors struct {
 		allowedOrigins []string
 	}
-	smtp struct {
-		host     string
-		port     int
-		username string
-		password string
-		sender   string
-	}
+	smtp mailer.Config
 	db db.Config
 }
 
@@ -57,11 +52,11 @@ func main() {
 		"PostgreSQL max connection idle time",
 	)
 	// Mailer
-	flag.StringVar(&cfg.smtp.host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
-	flag.IntVar(&cfg.smtp.port, "smtp-port", 25, "SMTP port")
-	flag.StringVar(&cfg.smtp.username, "smtp-username", "", "SMTP username")
-	flag.StringVar(&cfg.smtp.password, "smtp-password", "", "SMTP password")
-	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "Greenlight <no-reply@greenlight.alexedwards.net>", "SMTP sender")
+	flag.StringVar(&cfg.smtp.Host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
+	flag.IntVar(&cfg.smtp.Port, "smtp-port", 25, "SMTP port")
+	flag.StringVar(&cfg.smtp.Username, "smtp-username", "", "SMTP username")
+	flag.StringVar(&cfg.smtp.Password, "smtp-password", "", "SMTP password")
+	flag.StringVar(&cfg.smtp.Sender, "smtp-sender", "Greenlight <no-reply@greenlight.alexedwards.net>", "SMTP sender")
 	// CORS
 	flag.Func(
 		"cors-allowed-origins",
@@ -81,6 +76,13 @@ func main() {
 	defer db.Close()
 	logger.Info("database connection pool established")
 
+	mailer, err := mailer.Init(cfg.smtp, logger)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	logger.Info("mailer connection established")
+
 	// Publish the number of active goroutines.
 	expvar.Publish("goroutines", expvar.Func(func() interface{} {
 		return runtime.NumGoroutine()
@@ -98,13 +100,7 @@ func main() {
 		config: cfg,
 		logger: logger,
 		models: data.NewModels(db),
-		mailer: mailer.New(
-			cfg.smtp.host, 
-			cfg.smtp.port, 
-			cfg.smtp.username,
-			cfg.smtp.password,
-			cfg.smtp.sender,
-		),
+		mailer: mailer,
 	}
 
 	err = app.serve()

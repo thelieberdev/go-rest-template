@@ -4,27 +4,43 @@ import (
 	"bytes"
 	"embed"
 	"html/template"
-	"time"
+	"log/slog"
+	"os"
 
-	"github.com/go-mail/mail/v2"
+	"github.com/wneessen/go-mail"
 )
 
 //go:embed "templates"
 var templateFS embed.FS
 
-type Mailer struct {
-	dialer *mail.Dialer
-	sender string
+type Config struct {
+	Host     	string
+	Port     	int
+	Username 	string
+	Password 	string
+	Sender   	string
 }
 
-func New(host string, port int, username, password, sender string) Mailer {
-	dialer := mail.NewDialer(host, port, username, password)
-	dialer.Timeout = 5 * time.Second
+type Mailer struct {
+	client  	 *mail.Client
+	sender  	 string
+	errLogger  *slog.Logger
+}
 
-	return Mailer{
-		dialer: dialer,
-		sender: sender,
+func Init(cfg Config, errLogger *slog.Logger) (*Mailer, error) {
+	client, err := mail.NewClient(
+		cfg.Host,
+		mail.WithTLSPortPolicy(mail.TLSMandatory),
+		mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover), 
+		mail.WithPort(cfg.Port),
+		mail.WithUsername(cfg.Username),
+		mail.WithPassword(cfg.Password),
+	)
+	if err != nil { 
+		return nil, err 
 	}
+
+	return &Mailer{ client: client, sender: cfg.Sender, }, nil
 }
 
 func (m Mailer) Send(recipient, templateFile string, data interface{}) error {
@@ -51,20 +67,23 @@ func (m Mailer) Send(recipient, templateFile string, data interface{}) error {
 		return err
 	}
 
-	msg := mail.NewMessage()
-	msg.SetHeader("To", recipient)
-	msg.SetHeader("From", m.sender)
-	msg.SetHeader("Subject", subject.String())
-	msg.SetBody("text/plain", plainBody.String())
-	msg.AddAlternative("text/html", htmlBody.String())
-
-	for i := 1; i <= 3; i++ {
-		err = m.dialer.DialAndSend(msg)
-		if nil == err {
-			return nil
-		}
-
-		time.Sleep(500 * time.Millisecond)
+	msg := mail.NewMsg()
+	if err := msg.From(m.sender); err != nil {
+    m.errLogger.Error("failed to set FROM address: " + err.Error())
+		os.Exit(1)
 	}
+	if err := msg.To(recipient); err != nil {
+		m.errLogger.Error("failed to set TO address: " + err.Error())
+		os.Exit(1)
+	}
+	msg.Subject(subject.String())
+	msg.SetBodyString(mail.TypeTextPlain, plainBody.String())
+	msg.AddAlternativeString(mail.TypeTextHTML, htmlBody.String())
+
+	if err := m.client.DialAndSend(msg); err != nil {
+		m.errLogger.Error("failed to deliver mail: " + err.Error())
+		os.Exit(1)
+	}
+
 	return err
 }

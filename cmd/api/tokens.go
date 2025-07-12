@@ -9,9 +9,9 @@ import (
 	"github.com/lieberdev/go-rest-template/internal/validator"
 )
 
-func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
@@ -51,24 +51,124 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	if user.Activated {
-		v.AddError("email", "user has already been activated")
+	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, data.ScopeAuthentication)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusCreated, envelope{"authentication_token": token}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email"`
+	}
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	v := validator.New()
+	if data.ValidateEmail(v, input.Email); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, data.ScopeActivation)
+	user, err := app.models.Users.GetByEmail(input.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			v.AddError("email", "no matching email address found")
+			app.failedValidationResponse(w, r, v.Errors)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	if !user.Activated {
+		v.AddError("email", "user account must be activated")
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	token, err := app.models.Tokens.New(user.ID, 45*time.Minute, data.ScopePasswordReset)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	app.background(func() {
-		models := map[string]interface{}{
+		data := map[string]interface{}{
+			"passwordResetToken": token.Plaintext,
+		}
+
+		err = app.mailer.Send(user.Email, "token_password_reset.tmpl", data)
+		if err != nil {
+			app.logger.Error(err.Error())
+		}
+	})
+
+	env := envelope{"message": "an email will be sent to you containing password reset instructions"}
+	err = app.writeJSON(w, http.StatusAccepted, env, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email"`
+	}
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	v := validator.New()
+	if data.ValidateEmail(v, input.Email); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	user, err := app.models.Users.GetByEmail(input.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			v.AddError("email", "no matching email address found")
+			app.failedValidationResponse(w, r, v.Errors)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	if user.Activated {
+		v.AddError("email", "user has already been activated")
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopeActivation)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	app.background(func() {
+		data := map[string]interface{}{
 			"activationToken": token.Plaintext,
 		}
 
-		err = app.mailer.Send(user.Email, "user_activation.tmpl", models)
+		err = app.mailer.Send(user.Email, "token_activation.tmpl", data)
 		if err != nil {
 			app.logger.Error(err.Error())
 		}
@@ -80,108 +180,3 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		app.serverErrorResponse(w, r, err)
 	}
 }
-
-func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email string `json:"email"`
-	}
-
-	err := app.readJSON(w, r, &input)
-	if err != nil {
-		app.badRequestResponse(w, r, err)
-		return
-	}
-
-	v := validator.New()
-	if models.ValidateEmail(v, input.Email); !v.Valid() {
-		app.failedValidationResponse(w, r, v.Errors)
-		return
-	}
-
-	user, err := app.models.Users.GetByEmail(input.Email)
-	if err != nil {
-		switch {
-		case errors.Is(err, models.ErrRecordNotFound):
-			app.invalidCredentialsResponse(w, r)
-		default:
-			app.serverErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	token, err := app.models.Tokens.New(user.ID, 2*time.Hour, models.ScopeAuthentication)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	app.background(func() {
-		models := map[string]interface{}{
-			"authenticationToken": token.Plaintext,
-		}
-
-		err = app.mailer.Send(user.Email, "user_authentication.tmpl", models)
-		if err != nil {
-			app.logger.PrintError(err, nil)
-		}
-	})
-
-	env := envelope{"message": "an email will be sent to you containing authentication instructions"}
-	err = app.writeJSON(w, http.StatusAccepted, env, nil)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-	}
-}
-
-func (app *application) createDeletionTokenHandler(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email string `json:"email"`
-	}
-
-	err := app.readJSON(w, r, &input)
-	if err != nil {
-		app.badRequestResponse(w, r, err)
-		return
-	}
-
-	v := validator.New()
-	if models.ValidateEmail(v, input.Email); !v.Valid() {
-		app.failedValidationResponse(w, r, v.Errors)
-		return
-	}
-
-	user, err := app.models.Users.GetByEmail(input.Email)
-	if err != nil {
-		switch {
-		case errors.Is(err, models.ErrRecordNotFound):
-			app.invalidCredentialsResponse(w, r)
-		default:
-			app.serverErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, models.ScopeDeletion)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	app.background(func() {
-		models := map[string]interface{}{
-			"deletionToken": token.Plaintext,
-		}
-
-		err = app.mailer.Send(user.Email, "user_deletion.tmpl", models)
-		if err != nil {
-			app.logger.PrintError(err, nil)
-		}
-	})
-
-	env := envelope{"message": "an email will be sent to you containing deletion instructions"}
-	err = app.writeJSON(w, http.StatusAccepted, env, nil)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-	}
-}
-
