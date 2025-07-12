@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"context"
 	"time"
+
+	_ "github.com/jackc/pgx/v5"
 )
 
 type Config struct {

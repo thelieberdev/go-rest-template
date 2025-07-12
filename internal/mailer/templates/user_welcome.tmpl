@@ -8,8 +8,7 @@ Please send a request to the `PUT /v1/users/activated` endpoint with the followi
 body to activate your account:
 {"token": "{{.activationToken}}"}
 Please note that this is a one-time use token and it will expire in 3 days.
-Thanks,
-The Greenlight Team
+Thanks
 {{end}}
 
 {{define "htmlBody"}}
@@ -29,8 +28,7 @@ The Greenlight Team
         {"token": "{{.activationToken}}"}
         </code></pre>
         <p>Please note that this is a one-time use token and it will expire in 3 days.</p>
-        <p>Thanks,</p>
-        <p>The Greenlight Team</p>
+        <p>Thanks</p>
     </body>
 </html>
 {{end}}

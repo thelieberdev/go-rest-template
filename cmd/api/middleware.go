@@ -31,25 +31,6 @@ func (app *application) Logger(next http.Handler) http.Handler {
 	})
 }
 
-func (app *application) metrics(next http.Handler) http.Handler {
-	totalRequestsReceived := expvar.NewInt("total_requests_received")
-	totalResponsesSent := expvar.NewInt("total_responses_sent")
-	totalProcessingTimeMicroseconds := expvar.NewInt("total_processing_time_μs")
-	totalResponsesSentByStatus := expvar.NewMap("total_responses_sent_by_status")
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: check if this is correct
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-		start_time := time.Now()
-		defer func() {
-			totalRequestsReceived.Add(1)
-			totalResponsesSent.Add(1)
-			totalProcessingTimeMicroseconds.Add(time.Since(start_time).Microseconds())
-			totalResponsesSentByStatus.Add(strconv.Itoa(ww.Status()), 1)
-		}()
-	})
-}
-
 func (app *application) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Authorization")
@@ -89,5 +70,67 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		r = app.contextSetUser(r, user)
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) requireAuthenticatedUser(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+		if user.IsAnonymous() {
+			app.authenticationRequiredResponse(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) requireActivatedUser(next http.HandlerFunc) http.HandlerFunc {
+	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+		if !user.Activated {
+			app.inactiveAccountResponse(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+	return app.requireAuthenticatedUser(fn)
+}
+
+func (app *application) requirePermission(code string, next http.HandlerFunc) http.HandlerFunc {
+	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		permissions, err := app.models.Permissions.GetAllForUser(user.ID)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		if !permissions.Include(code) {
+			app.notPermittedResponse(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+
+	return app.requireActivatedUser(fn)
+}
+
+func (app *application) metrics(next http.Handler) http.Handler {
+	totalRequestsReceived := expvar.NewInt("total_requests_received")
+	totalResponsesSent := expvar.NewInt("total_responses_sent")
+	totalProcessingTimeMicroseconds := expvar.NewInt("total_processing_time_μs")
+	totalResponsesSentByStatus := expvar.NewMap("total_responses_sent_by_status")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO: check if this is correct
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		start_time := time.Now()
+		defer func() {
+			totalRequestsReceived.Add(1)
+			totalResponsesSent.Add(1)
+			totalProcessingTimeMicroseconds.Add(time.Since(start_time).Microseconds())
+			totalResponsesSentByStatus.Add(strconv.Itoa(ww.Status()), 1)
+		}()
 	})
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"expvar"
 	"net/http"
 	"time"
 
@@ -37,6 +38,25 @@ func (app *application) routes() http.Handler {
 	router.MethodNotAllowed(app.methodNotAllowedResponse)
 
 	router.Get("/healthcheck", app.healthcheckHandler)
+	router.Get("/debug/vars", expvar.Handler().ServeHTTP)
+
+	router.Group(func(router chi.Router) {
+		router.Use(httprate.Limit(
+			3,
+			1*time.Minute,
+			httprate.WithLimitHandler(func(w http.ResponseWriter, r *http.Request) {
+				app.tooManyRequests(w, r)
+			}),
+		))
+
+		router.Post("/users", app.registerUserHandler)
+		router.Put("/users/activated", app.activateUserHandler)
+		router.Put("/users/password", app.updateUserPasswordHandler)
+
+		router.Post("/tokens/authentication", app.createAuthenticationTokenHandler)
+		router.Post("/tokens/activation", app.createActivationTokenHandler)
+		router.Post("/tokens/password-reset", app.createPasswordResetTokenHandler)
+	}
 
 	return router
 }

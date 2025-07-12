@@ -2,7 +2,6 @@ package validator
 
 import (
 	"regexp"
-	"slices"
 )
 
 type Validator struct {
