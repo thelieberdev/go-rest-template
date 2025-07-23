@@ -1,8 +1,8 @@
 package database
 
 import (
-	"database/sql"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -16,7 +16,7 @@ type Models struct {
 	Permissions PermissionModel
 }
 
-func NewModels(db *sql.DB) Models {
+func NewModels(db *pgxpool.Pool) Models {
 	return Models{
 		Tokens:      TokenModel{DB: db},
 		Users:       UserModel{DB: db},

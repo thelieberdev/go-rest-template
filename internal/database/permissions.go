@@ -2,24 +2,45 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"slices"
 	"time"
 
-	_ "github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lieberdev/go-rest-template/internal/validator"
 )
 
 type Permissions []string
 
 type PermissionModel struct {
-	DB *sql.DB
+	DB *pgxpool.Pool
 }
 
-func (p Permissions) Include(code string) bool {
+func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
+	v.Check(tokenPlaintext != "", "token", "must be provided")
+	v.Check(len(tokenPlaintext) == 26, "token", "must be 26 bytes long")
+}
+
+func (p Permissions) Includes(code string) bool {
 	return slices.Contains(p, code)
 }
 
-func (m PermissionModel) GetAllForUser(userID int64) (Permissions, error) {
+func (m PermissionModel) InsertForUser(userID uuid.UUID, codes ...string) error {
+	query := `
+		INSERT INTO users_permissions
+		SELECT $1, permissions.id
+	  FROM permissions
+	  WHERE permissions.code = ANY($2)`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err := m.DB.Exec(ctx, query, userID, codes)
+
+	return err
+}
+
+func (m PermissionModel) GetAllForUser(userID uuid.UUID) (Permissions, error) {
 	query := `
 		SELECT permissions.code
 		FROM permissions
@@ -30,14 +51,13 @@ func (m PermissionModel) GetAllForUser(userID int64) (Permissions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	rows, err := m.DB.QueryContext(ctx, query, userID)
+	rows, err := m.DB.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var permissions Permissions
-
 	for rows.Next() {
 		var permission string
 		err := rows.Scan(&permission)
@@ -53,17 +73,3 @@ func (m PermissionModel) GetAllForUser(userID int64) (Permissions, error) {
 
 	return permissions, nil
 }
-
-func (m PermissionModel) AddForUser(userID int64, codes ...string) error {
-	query := `
-		INSERT INTO users_permissions
-		SELECT $1, permissions.id FROM permissions WHERE permissions.code = ANY($2)`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	_, err := m.DB.ExecContext(ctx, query, userID, codes)
-
-	return err
-}
-

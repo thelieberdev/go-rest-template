@@ -4,33 +4,33 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base32"
 	"time"
 
-	"github.com/lieberdev/go-rest-template/internal/validator"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Scope string
 const (
-	ScopeActivation Scope     = "activation"
+	ScopeActivation	Scope = "activation"
 	ScopeAuthentication Scope = "authentication"
-	ScopePasswordReset  Scope = "password-reset"
+	ScopePasswordReset Scope = "password-reset"
 )
 
 type Token struct {
 	Plaintext string    `json:"token"`
 	Hash      []byte    `json:"-"`
-	UserID    int64     `json:"-"`
+	UserID    uuid.UUID `json:"-"`
 	Expiry    time.Time `json:"expiry"`
 	Scope     Scope     `json:"-"`
 }
 
 type TokenModel struct {
-	DB *sql.DB
+	DB *pgxpool.Pool
 }
 
-func generateToken(userID int64, ttl time.Duration, scope Scope) (*Token, error) {
+func GenerateToken(userID uuid.UUID, ttl time.Duration, scope Scope) (*Token, error) {
 	token := &Token{
 		UserID: userID,
 		Expiry: time.Now().Add(ttl),
@@ -52,22 +52,6 @@ func generateToken(userID int64, ttl time.Duration, scope Scope) (*Token, error)
 	return token, nil
 }
 
-func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
-	v.Check(tokenPlaintext != "", "token", "must be provided")
-	v.Check(len(tokenPlaintext) == 26, "token", "must be 26 bytes long")
-}
-
-func (m TokenModel) New(userID int64, ttl time.Duration, scope Scope) (*Token, error) {
-	token, err := generateToken(userID, ttl, scope)
-	if err != nil {
-		return nil, err
-	}
-
-	err = m.Insert(token)
-
-	return token, err
-}
-
 func (m TokenModel) Insert(token *Token) error {
 	query := `
 		INSERT INTO tokens (hash, user_id, expiry, scope)
@@ -78,12 +62,12 @@ func (m TokenModel) Insert(token *Token) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := m.DB.ExecContext(ctx, query, args...)
+	_, err := m.DB.Exec(ctx, query, args...)
 
 	return err
 }
 
-func (m TokenModel) DeleteAllForUser(scope Scope, userID int64) error {
+func (m TokenModel) DeleteAllForUser(scope Scope, userID uuid.UUID) error {
 	query := `
 		DELETE FROM tokens
 		WHERE scope = $1 AND user_id = $2`
@@ -91,7 +75,7 @@ func (m TokenModel) DeleteAllForUser(scope Scope, userID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := m.DB.ExecContext(ctx, query, scope, userID)
+	_, err := m.DB.Exec(ctx, query, scope, userID)
 
 	return err
 }

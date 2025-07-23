@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/felixge/httpsnoop"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/lieberdev/go-rest-template/internal/database"
 	"github.com/lieberdev/go-rest-template/internal/validator"
@@ -51,12 +52,12 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		token := headerParts[1]
 
 		v := validator.New()
-		if database.ValidatePasswordPlaintext(v, token); !v.Valid() {
+		if database.ValidateTokenPlaintext(v, token); !v.Valid() {
 			app.invalidAuthenticationTokenResponse(w, r)
 			return
 		}
 
-		user, err := app.models.Users.GetForToken(database.ScopeAuthentication, token)
+		user, err := app.models.Users.GetByToken(database.ScopeAuthentication, token)
 		if err != nil {
 			switch {
 			case errors.Is(err, database.ErrRecordNotFound):
@@ -106,7 +107,7 @@ func (app *application) requirePermission(code string, next http.HandlerFunc) ht
 			return
 		}
 
-		if !permissions.Include(code) {
+		if !permissions.Includes(code) {
 			app.notPermittedResponse(w, r)
 			return
 		}
@@ -123,14 +124,11 @@ func (app *application) metrics(next http.Handler) http.Handler {
 	totalResponsesSentByStatus := expvar.NewMap("total_responses_sent_by_status")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: check if this is correct
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-		start_time := time.Now()
-		defer func() {
-			totalRequestsReceived.Add(1)
-			totalResponsesSent.Add(1)
-			totalProcessingTimeMicroseconds.Add(time.Since(start_time).Microseconds())
-			totalResponsesSentByStatus.Add(strconv.Itoa(ww.Status()), 1)
-		}()
+		totalRequestsReceived.Add(1)
+		metrics := httpsnoop.CaptureMetrics(next, w, r)
+		totalResponsesSent.Add(1)
+		totalProcessingTimeMicroseconds.Add(metrics.Duration.Microseconds())
+		totalResponsesSentByStatus.Add(strconv.Itoa(metrics.Code), 1)
+
 	})
 }

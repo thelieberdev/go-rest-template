@@ -43,7 +43,7 @@ func Init(cfg Config, errLogger *slog.Logger) (*Mailer, error) {
 	return &Mailer{ client: client, sender: cfg.Sender, }, nil
 }
 
-func (m Mailer) Send(recipient, templateFile string, data interface{}) error {
+func (m Mailer) Send(recipient, templateFile string, data any) error {
 	tmpl, err := template.New("email").ParseFS(templateFS, "templates/"+templateFile)
 	if err != nil {
 		return err

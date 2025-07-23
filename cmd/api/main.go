@@ -27,8 +27,8 @@ type config struct {
 type application struct {
 	config     config
 	logger     *slog.Logger
-	models     database.Models
 	mailer     *mailer.Mailer
+	models     database.Models
 	waitgroup  sync.WaitGroup
 }
 
@@ -51,11 +51,11 @@ func main() {
 		"PostgreSQL max connection idle time",
 	)
 	// Mailer
-	flag.StringVar(&cfg.smtp.Host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
+	flag.StringVar(&cfg.smtp.Host, "smtp-host", "", "SMTP host (required)")
 	flag.IntVar(&cfg.smtp.Port, "smtp-port", 25, "SMTP port")
-	flag.StringVar(&cfg.smtp.Username, "smtp-username", "", "SMTP username")
-	flag.StringVar(&cfg.smtp.Password, "smtp-password", "", "SMTP password")
-	flag.StringVar(&cfg.smtp.Sender, "smtp-sender", "Greenlight <no-reply@greenlight.alexedwards.net>", "SMTP sender")
+	flag.StringVar(&cfg.smtp.Username, "smtp-username", "", "SMTP username (required)")
+	flag.StringVar(&cfg.smtp.Password, "smtp-password", "", "SMTP password (required)")
+	flag.StringVar(&cfg.smtp.Sender, "smtp-sender", "", "SMTP sender (required)")
 	// CORS
 	flag.Func(
 		"cors-allowed-origins",
@@ -66,6 +66,17 @@ func main() {
 		},
 	)
 	flag.Parse()
+
+	// Check if required flags are set
+	missing := []string{}
+	if cfg.smtp.Host == "" { missing = append(missing, "--smtp-host") }
+	if cfg.smtp.Username == "" { missing = append(missing, "--smtp-username") }
+	if cfg.smtp.Password == "" { missing = append(missing, "--smtp-password") }
+	if cfg.smtp.Sender == "" { missing = append(missing, "--smtp-sender") }
+	if len(missing) > 0 {
+		slog.Error("missing required flags: " + strings.Join(missing, ", "))
+		os.Exit(1)
+	}
 
 	db, err := database.Init(&cfg.db)
 	if err != nil {
@@ -83,15 +94,15 @@ func main() {
 	logger.Info("mailer connection established")
 
 	// Publish the number of active goroutines.
-	expvar.Publish("goroutines", expvar.Func(func() interface{} {
+	expvar.Publish("goroutines", expvar.Func(func() any {
 		return runtime.NumGoroutine()
 	}))
 	// Publish the database connection pool statistics.
-	expvar.Publish("database", expvar.Func(func() interface{} {
-		return db.Stats()
+	expvar.Publish("database", expvar.Func(func() any {
+		return db.Stat()
 	}))
 	// Publish the current Unix timestamp.
-	expvar.Publish("timestamp", expvar.Func(func() interface{} {
+	expvar.Publish("timestamp", expvar.Func(func() any {
 		return time.Now().Unix()
 	}))
 

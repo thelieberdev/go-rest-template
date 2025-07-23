@@ -51,7 +51,13 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, database.ScopeAuthentication)
+	token, err := database.GenerateToken(user.ID, 24*time.Hour, database.ScopeAuthentication)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.models.Tokens.Insert(token)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -98,14 +104,20 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 45*time.Minute, database.ScopePasswordReset)
+	token, err := database.GenerateToken(user.ID, 15*time.Minute, database.ScopePasswordReset)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.models.Tokens.Insert(token)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	app.background(func() {
-		data := map[string]interface{}{
+		data := map[string]any{
 			"passwordResetToken": token.Plaintext,
 		}
 
@@ -157,14 +169,20 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, database.ScopeActivation)
+	token, err := database.GenerateToken(user.ID, 30*time.Minute, database.ScopeActivation)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.models.Tokens.Insert(token)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	app.background(func() {
-		data := map[string]interface{}{
+		data := map[string]any{
 			"activationToken": token.Plaintext,
 		}
 

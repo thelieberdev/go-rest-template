@@ -11,8 +11,10 @@ import (
 
 func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
 	}
 
 	err := app.readJSON(w, r, &input)
@@ -22,8 +24,9 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	user := &database.User{
+		FirstName: input.FirstName,
+		LastName:  input.LastName,
 		Email:     input.Email,
-		Activated: false,
 	}
 
 	err = user.Password.Set(input.Password)
@@ -50,23 +53,27 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Example permission
-	err = app.models.Permissions.AddForUser(user.ID, "users:read")
+	// err = app.models.Permissions.InsertForUser(user.ID, "default")
+	// if err != nil {
+	// 	app.serverErrorResponse(w, r, err)
+	// 	return
+	// }
+
+	token, err := database.GenerateToken(user.ID, 30*time.Minute, database.ScopeActivation)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, database.ScopeActivation)
+	err = app.models.Tokens.Insert(token)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	app.background(func() {
-		data := map[string]interface{}{
+		data := map[string]any{
 			"activationToken": token.Plaintext,
-			"userID":          user.ID,
 		}
 
 		err = app.mailer.Send(user.Email, "user_welcome.tmpl", data)
@@ -98,7 +105,7 @@ func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	user, err := app.models.Users.GetForToken(database.ScopeActivation, input.TokenPlaintext)
+	user, err := app.models.Users.GetByToken(database.ScopeActivation, input.TokenPlaintext)
 	if err != nil {
 		switch {
 		case errors.Is(err, database.ErrRecordNotFound):
@@ -155,7 +162,7 @@ func (app *application) updateUserPasswordHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	user, err := app.models.Users.GetForToken(database.ScopePasswordReset, input.TokenPlaintext)
+	user, err := app.models.Users.GetByToken(database.ScopePasswordReset, input.TokenPlaintext)
 	if err != nil {
 		switch {
 		case errors.Is(err, database.ErrRecordNotFound):

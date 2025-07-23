@@ -22,6 +22,7 @@ confirm:
 .PHONY: build/api
 build/api:
 	@echo 'Building cmd/api...'
+	@mkdir -p ./bin
 	go build -ldflags="-s" -o=./bin/api ./cmd/api
 
 # ==================================================================================== #
@@ -31,12 +32,28 @@ build/api:
 ## run/api flags=$1: run the cmd/api application
 .PHONY: run/api
 run/api:
-	go run ./cmd/api -db-dsn=${POSTGRES_DSN} -cors-allowed-origins=${CORS_ALLOWED_ORIGINS} -smtp-username=${SMTP_USERNAME} -smtp-password=${SMTP_PASSWORD} ${flags}
+	@go run ./cmd/api -db-dsn=${POSTGRES_DSN} \
+		                -cors-allowed-origins=${CORS_ALLOWED_ORIGINS} \
+		                -smtp-username=${SMTP_USERNAME} \
+		                -smtp-password=${SMTP_PASSWORD} \
+									  -smtp-host=${SMTP_HOST} \
+									  -smtp-sender=${SMTP_SENDER} \
+		                ${flags} \
+
+## watch/api: run the cmd/api application with live reload
+.PHONY: watch/api
+watch/api:
+	@air -c .air.toml
+
+## test/all: tests all packages
+.PHONY: test/all
+test/all:
+	@go test ./... -v
 
 ## psql: connect to postgres database
 .PHONY: psql
 psql:
-	psql $(POSTGRES_DSN)
+	@psql $(POSTGRES_DSN)
 
 ## migrations/new name=$1: create a new database migration
 PHONY: migrations/new
@@ -48,13 +65,13 @@ migrations/new:
 .PHONY: migrations/up
 migrations/up: confirm
 	@echo 'Running up migrations...'
-	migrate -path ./migrations -database ${POSTGRES_DSN} up
+	@migrate -path ./migrations -database ${POSTGRES_DSN} up
 
 ## migrations/down: apply all down database migrations
 .PHONY: migrations/down
 migrations/down: confirm
 	@echo 'Running down migrations...'
-	migrate -path ./migrations -database ${POSTGRES_DSN} down
+	@migrate -path ./migrations -database ${POSTGRES_DSN} down
 
 # ==================================================================================== #
 # QUALITY CONTROL
